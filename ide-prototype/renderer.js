@@ -48,6 +48,11 @@ window.addEventListener('DOMContentLoaded', () => {
         latestPlan = j
         suggestionText.innerText = j.suggestion || JSON.stringify(j, null, 2)
         suggestionSalience.innerText = j.salience != null ? j.salience : '-'
+        // If structured edits are provided, show a human-readable representation
+        if (j.edits && Array.isArray(j.edits)) {
+          const editsText = j.edits.map((e, i) => `Edit ${i+1}: lines ${e.startLine}..${e.endLine}\n${e.replacement}\n---`).join('\n')
+          suggestionDiff.innerText = editsText
+        }
       } catch (err) {
         alert('Agent host unreachable: ' + err)
       }
@@ -62,9 +67,16 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!p) return alert('Enter file path to preview suggestion')
         const existing = window.ide.readFile(p)
         const oldContent = existing.ok ? existing.content : editor.getValue()
-        const newContent = latestPlan.suggestion || editor.getValue()
-        const diff = computeSimpleDiff(oldContent, newContent)
-        suggestionDiff.innerText = diff
+        // If structured edits are present, compute the result of applying them
+        if (latestPlan && latestPlan.edits && Array.isArray(latestPlan.edits)) {
+          const newContent = applyEdits(oldContent, latestPlan.edits)
+          const diff = computeSimpleDiff(oldContent, newContent)
+          suggestionDiff.innerText = diff
+        } else {
+          const newContent = latestPlan.suggestion || editor.getValue()
+          const diff = computeSimpleDiff(oldContent, newContent)
+          suggestionDiff.innerText = diff
+        }
       } catch (err) {
         alert('Failed to compute preview: ' + err)
       }
@@ -75,7 +87,12 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!latestPlan) return alert('No suggestion available')
         const p = document.getElementById('filePath').value
         if (!p) return alert('Enter file path to apply suggestion')
-        const newContent = latestPlan.suggestion || editor.getValue()
+        // If structured edits present, apply them to the existing content
+        const existing = window.ide.readFile(p)
+        const oldContent = existing.ok ? existing.content : editor.getValue()
+        const newContent = (latestPlan && latestPlan.edits && Array.isArray(latestPlan.edits))
+          ? applyEdits(oldContent, latestPlan.edits)
+          : (latestPlan.suggestion || editor.getValue())
         // backup first
         const b = window.ideBackup.backupFile(p)
         if (!b.ok) {
@@ -88,6 +105,21 @@ window.addEventListener('DOMContentLoaded', () => {
           alert('Applied suggestion and saved to ' + p + (b.ok ? '\nBackup: ' + b.backupPath : ''))
           const read = window.ide.readFile(p)
           if (read.ok) editor.setValue(read.content)
+          // append audit entry
+          try {
+            const audit = {
+              file: p,
+              salience: latestPlan.salience != null ? latestPlan.salience : null,
+              summary: latestPlan.summary || null,
+              backup: b.ok ? b.backupPath : null,
+                diff: suggestionDiff.innerText || null,
+                edits: latestPlan.edits || null
+            }
+            window.ideAudit.appendAudit(audit)
+            refreshAuditLog()
+          } catch (e) {
+            console.error('Audit append failed', e)
+          }
           suggestionDiff.innerText = ''
         }
       } catch (err) {
@@ -120,6 +152,30 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     })
 
+    // refresh audit log entries shown in the panel
+    const auditLogEl = document.getElementById('auditLog')
+    function refreshAuditLog() {
+      try {
+        const r = window.ideAudit.readRecent(8)
+        if (!r.ok) return auditLogEl.innerText = 'Audit read error: ' + r.error
+        if (!r.entries || r.entries.length === 0) return auditLogEl.innerText = '(no audit entries yet)'
+        const lines = r.entries.map(e => {
+          const ts = e.ts ? new Date(e.ts).toLocaleString() : '(no ts)'
+          const file = e.file || e.path || 'unknown'
+          const sal = e.salience != null ? ('salience=' + e.salience) : ''
+          const b = e.backup ? (' backup=' + e.backup) : ''
+          const s = e.summary ? (' summary=' + e.summary) : ''
+          return `${ts} | ${file} ${sal}${b}${s}`
+        })
+        auditLogEl.innerText = lines.join('\n')
+      } catch (e) {
+        auditLogEl.innerText = 'Audit refresh error: ' + e
+      }
+    }
+
+    // populate audit on load
+    refreshAuditLog()
+
     // simple line-based diff helper
     function computeSimpleDiff(a, b) {
       const A = a.split('\n')
@@ -137,6 +193,28 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
       return out.join('\n')
+    }
+
+    // Applies structured edits to a text content. Edits are applied in order,
+    // where each edit has {startLine, endLine, replacement} using 0-based line indices.
+    function applyEdits(content, edits) {
+      const lines = content.split('\n')
+      // Sort edits by startLine ascending so we can apply from top to bottom
+      const sorted = edits.slice().sort((a,b) => a.startLine - b.startLine)
+      let cursorShift = 0
+      for (const e of sorted) {
+        const s = Math.max(0, e.startLine)
+        const en = Math.max(0, e.endLine)
+        const before = lines.slice(0, s)
+        const after = lines.slice(en)
+        const repl = (e.replacement || '').split('\n')
+        // rebuild lines
+        const merged = before.concat(repl).concat(after)
+        // set lines for next iteration
+        lines.length = 0
+        Array.prototype.push.apply(lines, merged)
+      }
+      return lines.join('\n')
     }
   })
 })

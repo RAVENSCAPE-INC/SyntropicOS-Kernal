@@ -27,6 +27,14 @@ const server = http.createServer(async (req, res) => {
         analysisTokens: ctx.length,
         salience: Number(salience.toFixed(3)),
         suggestion,
+        // Structured edits: simple insertion of suggestion at file top (startLine 0)
+        edits: [
+          {
+            startLine: 0,
+            endLine: 0,
+            replacement: suggestion
+          }
+        ],
         steps: [
           'Run static analysis',
           'Propose small refactor',
