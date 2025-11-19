@@ -14,8 +14,7 @@ fs.copyFileSync(file, bak)
 if (!fs.existsSync(bak)) { console.error('backup failed'); process.exit(2) }
 
 // modify original
-fs.writeFileSync(file, 'line1
-modified\n')
+fs.writeFileSync(file, 'line1\nmodified\n')
 
 // restore latest
 const all = fs.readdirSync(tmpDir).filter(f => f.startsWith('sample.txt.bak.'))

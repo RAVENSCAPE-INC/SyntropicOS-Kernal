@@ -36,12 +36,28 @@ window.addEventListener('DOMContentLoaded', () => {
     const suggestionSalience = document.getElementById('suggestion-salience')
     let latestPlan = null
 
+    let latestResonance = null
     document.getElementById('btn-plan').addEventListener('click', async () => {
       try {
         const code = editor.getValue().slice(0, 4096)
+        // first call resonance endpoint
+        try {
+          const rresp = await fetch('http://127.0.0.1:3001/resonance', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context: code })
+          })
+          if (rresp.ok) {
+            const rj = await rresp.json()
+            latestResonance = rj.resonance
+            document.getElementById('resonance-score').innerText = latestResonance
+          }
+        } catch (e) {
+          console.warn('resonance call failed', e)
+        }
+
         const resp = await fetch('http://127.0.0.1:3001/plan', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ context: code })
+          body: JSON.stringify({ context: code, resonance: latestResonance })
         })
         if (!resp.ok) throw new Error('bad response ' + resp.status)
         const j = await resp.json()
@@ -110,29 +126,61 @@ window.addEventListener('DOMContentLoaded', () => {
           clearLineDecorations()
           // append audit entry
           try {
-            const audit = {
-              file: p,
-              salience: latestPlan.salience != null ? latestPlan.salience : null,
-              summary: latestPlan.summary || null,
-              backup: b.ok ? b.backupPath : null,
-                diff: suggestionDiff.innerText || null,
-                edits: latestPlan.edits || null
+            // If manual approval required, mark as pending and write audit without applying
+            const requireApproval = document.getElementById('chk-require-approval').checked
+            if (requireApproval) {
+              try {
+                const auditEntry = {
+                  file: p,
+                  salience: latestPlan.salience != null ? latestPlan.salience : null,
+                  summary: latestPlan.summary || null,
+                  backup: b.ok ? b.backupPath : null,
+                  diff: suggestionDiff.innerText || null,
+                  edits: latestPlan.edits || null,
+                  status: 'pending'
+                }
+                window.ideAudit.appendAudit(auditEntry)
+                refreshAuditLog()
+                alert('Suggestion recorded as PENDING. Use Approve Pending to apply.')
+                suggestionDiff.innerText = ''
+                return
+              } catch (e) {
+                console.error('Audit append failed', e)
+              }
             }
-            window.ideAudit.appendAudit(audit)
-            refreshAuditLog()
-          } catch (e) {
-            console.error('Audit append failed', e)
-          }
-          suggestionDiff.innerText = ''
-        }
-      } catch (err) {
-        alert('Failed to apply suggestion: ' + err)
-      }
-    })
 
-    document.getElementById('btn-cancel-apply').addEventListener('click', () => {
-      suggestionDiff.innerText = ''
-    })
+            const res = window.ide.writeFile(p, newContent)
+            if (!res.ok) alert('Save error: ' + res.error)
+            else {
+              // sign the diff/content
+              let sig = null
+              try {
+                window.ideSign.getOrCreateKey()
+                const s = window.ideSign.sign(suggestionDiff.innerText || newContent)
+                if (s.ok) sig = s.signature
+              } catch (e) { console.error('sign failed', e) }
+
+              alert('Applied suggestion and saved to ' + p + (b.ok ? '\nBackup: ' + b.backupPath : ''))
+              const read = window.ide.readFile(p)
+              if (read.ok) editor.setValue(read.content)
+              // append audit entry with signature
+              try {
+                const audit = {
+                  file: p,
+                  salience: latestPlan.salience != null ? latestPlan.salience : null,
+                  summary: latestPlan.summary || null,
+                  backup: b.ok ? b.backupPath : null,
+                  diff: suggestionDiff.innerText || null,
+                  edits: latestPlan.edits || null,
+                  status: 'applied',
+                  signature: sig
+                }
+                window.ideAudit.appendAudit(audit)
+                refreshAuditLog()
+              } catch (e) {
+                console.error('Audit append failed', e)
+              }
+              suggestionDiff.innerText = ''
 
     document.getElementById('btn-clear-suggestion').addEventListener('click', () => {
       suggestionText.innerText = ''
@@ -180,6 +228,82 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // populate audit on load
     refreshAuditLog()
+
+    // Approve pending entries: find latest pending and apply
+    document.getElementById('btn-approve-pending').addEventListener('click', async () => {
+      try {
+        const r = window.ideAudit.readRecent(50)
+        if (!r.ok) return alert('Audit read failed: ' + r.error)
+        const pend = (r.entries || []).filter(e => e.status === 'pending')
+        if (!pend || pend.length === 0) return alert('No pending entries')
+        // pick the oldest pending (FIFO)
+        const entry = pend[0]
+        const p = entry.file
+        if (!p) return alert('Pending entry missing file')
+        const existing = window.ide.readFile(p)
+        const oldContent = existing.ok ? existing.content : editor.getValue()
+        const newContent = entry.edits ? applyEdits(oldContent, entry.edits) : (entry.suggestion || oldContent)
+        const b = window.ideBackup.backupFile(p)
+        if (!b.ok) {
+          const ok = confirm('Backup failed: ' + b.error + '\nProceed anyway?')
+          if (!ok) return
+        }
+        const res = window.ide.writeFile(p, newContent)
+        if (!res.ok) return alert('Save failed: ' + res.error)
+        // sign
+        let sig = null
+        try { window.ideSign.getOrCreateKey(); const s = window.ideSign.sign(entry.diff || newContent); if (s.ok) sig = s.signature } catch(e){}
+        // append applied audit record
+        window.ideAudit.appendAudit(Object.assign({}, entry, { status: 'applied', signature: sig, backup: b.ok ? b.backupPath : entry.backup }))
+        refreshAuditLog()
+        const read = window.ide.readFile(p)
+        if (read.ok) editor.setValue(read.content)
+        clearLineDecorations()
+        alert('Pending suggestion applied and signed')
+      } catch (e) { alert('Approve failed: ' + e) }
+    })
+
+    // Audit viewer modal handlers
+    const auditModal = document.getElementById('auditModal')
+    const auditDetails = document.getElementById('auditDetails')
+    document.getElementById('btn-open-audit').addEventListener('click', () => {
+      auditModal.style.display = 'block'
+      loadAuditDetails()
+    })
+    document.getElementById('auditClose').addEventListener('click', () => {
+      auditModal.style.display = 'none'
+    })
+    document.getElementById('auditReload').addEventListener('click', () => {
+      loadAuditDetails()
+      refreshAuditLog()
+    })
+    document.getElementById('auditDownload').addEventListener('click', async () => {
+      try {
+        const r = window.ideAuditRaw.getLogContent()
+        if (!r.ok) return alert('Failed to read log: ' + r.error)
+        const blob = new Blob([r.content], { type: 'text/plain' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'suggestions.log'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      } catch (e) {
+        alert('Download failed: ' + e)
+      }
+    })
+
+    async function loadAuditDetails() {
+      try {
+        const r = window.ideAudit.readRecent(50)
+        if (!r.ok) return auditDetails.innerText = 'Audit read error: ' + r.error
+        auditDetails.innerText = JSON.stringify(r.entries, null, 2)
+      } catch (e) {
+        auditDetails.innerText = 'Audit load error: ' + e
+      }
+    }
 
     // simple line-based diff helper
     function computeSimpleDiff(a, b) {

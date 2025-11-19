@@ -1,0 +1,27 @@
+name: vΩ CI
+
+on:
+  push:
+    paths:
+      - 'vomega/**'
+  pull_request:
+    paths:
+      - 'vomega/**'
+
+jobs:
+  vomega-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install vomega deps
+        run: |
+          cd vomega
+          npm install
+      - name: Run vomega tests
+        run: |
+          cd vomega
+          npm test

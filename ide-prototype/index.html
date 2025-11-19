@@ -30,7 +30,7 @@
 
     <div id="agentPanel" style="position:fixed; right:0; top:50px; width:360px; height:calc(100% - 60px); background:#1b1b1b; color:#ddd; padding:10px; box-shadow: -4px 0 8px rgba(0,0,0,0.6); overflow:auto;">
       <h3 style="margin:4px 0;color:#fff">Agent Suggestion</h3>
-      <div style="font-size:12px; margin-bottom:6px; color:#9aa5b1">Salience: <span id="suggestion-salience">-</span></div>
+      <div style="font-size:12px; margin-bottom:6px; color:#9aa5b1">Salience: <span id="suggestion-salience">-</span> &nbsp; Resonance: <span id="resonance-score">-</span></div>
       <pre id="suggestionText" style="white-space:pre-wrap; background:#0f1113; padding:8px; border-radius:4px; min-height:200px; color:#c7d1d7"></pre>
       <div style="margin-top:8px; display:flex; gap:8px">
         <button id="btn-apply-suggestion">Preview Apply</button>
@@ -48,6 +48,12 @@
       <div id="auditLog" style="background:#061012; padding:8px; border-radius:4px; min-height:80px; color:#bcd; font-size:12px; overflow:auto"></div>
       <div style="margin-top:8px">
         <button id="btn-open-audit">Open Audit Viewer</button>
+        <label style="display:block; margin-top:8px; font-size:12px; color:#9fb">
+          <input type="checkbox" id="chk-require-approval" /> Require manual approval before apply
+        </label>
+        <div style="margin-top:6px">
+          <button id="btn-approve-pending">Approve Pending</button>
+        </div>
       </div>
     </div>
 

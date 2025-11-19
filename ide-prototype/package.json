@@ -7,7 +7,7 @@
     "start": "electron .",
     "start:agent": "node agent-host.js",
     "install:deps": "npm install",
-    "test": "node tests/test_backup_restore.js && node tests/test_audit.js"
+    "test": "node tests/test_backup_restore.js && node tests/test_audit.js && node tests/test_resonance_logic.js"
   },
   "keywords": [],
   "author": "RAVENSCAPE-INC",

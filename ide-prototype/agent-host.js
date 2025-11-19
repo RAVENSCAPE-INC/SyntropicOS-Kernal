@@ -2,6 +2,7 @@
 const http = require('http')
 
 const PORT = 3001
+const { scoreResonance } = require('./agent-resonance')
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/plan') {
@@ -43,6 +44,22 @@ const server = http.createServer(async (req, res) => {
       }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(plan))
+    } catch (err) {
+      res.writeHead(400)
+      res.end('bad request')
+    }
+    return
+  }
+
+  if (req.method === 'POST' && req.url === '/resonance') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const data = JSON.parse(body || '{}')
+      const ctx = data.context || ''
+      const r = scoreResonance(ctx)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ resonance: r.score, reasons: r.reasons, metrics: r.metrics }))
     } catch (err) {
       res.writeHead(400)
       res.end('bad request')
