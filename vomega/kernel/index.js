@@ -2,6 +2,8 @@ const express = require('express')
 const bodyParser = require('body-parser')
 const path = require('path')
 const { scoreResonance } = require('./agent-resonance')
+const { applyEditsToContent, unifiedDiff, computeRisk } = require('./diff_engine')
+const { snapshotFile, appendEvent } = require('../vfs/overlay')
 
 const app = express()
 app.use(bodyParser.json({ limit: '1mb' }))
@@ -44,6 +46,43 @@ app.post('/plan-slow', async (req, res) => {
     const edits = [{ startLine: 0, endLine: 0, replacement: header }]
     res.json({ summary: 'vΩ slow plan', salience: r.score, edits })
   } catch (e) { res.status(400).send('bad request') }
+})
+
+// Preview patch: accepts { filePath OR oldContent, edits }
+app.post('/patch-preview', (req, res) => {
+  try {
+    const edits = req.body.edits || []
+    let oldContent = ''
+    if (req.body.oldContent != null) oldContent = req.body.oldContent
+    else if (req.body.filePath) {
+      const p = path.resolve(req.body.filePath)
+      if (fs.existsSync(p)) oldContent = fs.readFileSync(p, 'utf8')
+      else return res.status(404).send('file not found')
+    } else return res.status(400).send('missing oldContent or filePath')
+
+    const newContent = applyEditsToContent(oldContent, edits)
+    const diff = unifiedDiff(oldContent, newContent)
+    const risk = computeRisk(oldContent, newContent)
+    res.json({ diff, risk, preview: newContent })
+  } catch (e) { res.status(400).send('bad request') }
+})
+
+// Apply patch: requires filePath and edits; makes snapshot via VFS and writes file
+app.post('/apply-patch', (req, res) => {
+  try {
+    const edits = req.body.edits || []
+    if (!req.body.filePath) return res.status(400).send('missing filePath')
+    const p = path.resolve(req.body.filePath)
+    if (!fs.existsSync(p)) return res.status(404).send('file not found')
+    const oldContent = fs.readFileSync(p, 'utf8')
+    const backup = snapshotFile(p)
+    const newContent = applyEditsToContent(oldContent, edits)
+    fs.writeFileSync(p, newContent, 'utf8')
+    const risk = computeRisk(oldContent, newContent)
+    // append event to overlay
+    appendEvent({ type: 'apply-patch', file: p, backup, risk })
+    res.json({ ok: true, backup, risk })
+  } catch (e) { res.status(500).send('apply failed: ' + String(e)) }
 })
 
 const PORT = process.env.VOMEGA_KERNEL_PORT || 4010
