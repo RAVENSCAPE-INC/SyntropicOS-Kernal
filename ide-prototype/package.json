@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "start:agent": "node agent-host.js",
-    "install:deps": "npm install"
+    "install:deps": "npm install",
+    "test": "node tests/test_backup_restore.js && node tests/test_audit.js"
   },
   "keywords": [],
   "author": "RAVENSCAPE-INC",

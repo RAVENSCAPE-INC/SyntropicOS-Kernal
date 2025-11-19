@@ -57,3 +57,46 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log('Agent host listening on http://127.0.0.1:' + PORT)
 })
+
+// Slow planner endpoint: longer analysis and slightly different edits
+const http2 = http
+const SLOW_PORT = 3002
+const server2 = http2.createServer(async (req, res) => {
+  if (req.method === 'POST' && req.url === '/plan-slow') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const data = JSON.parse(body || '{}')
+      const ctx = (data.context || '')
+      // simulate longer processing
+      await new Promise(r => setTimeout(r, 600))
+      // produce edits: ensure file has header and ensure 'use strict' in JS files
+      const header = '/* Generated suggestion by slow-planner */\n'
+      const edits = []
+      if (!ctx.startsWith('/*')) {
+        edits.push({ startLine: 0, endLine: 0, replacement: header })
+      }
+      if (ctx.includes('function') && !ctx.includes("'use strict'")) {
+        edits.push({ startLine: 0, endLine: 0, replacement: "'use strict';\n" + header })
+      }
+      const plan = {
+        summary: 'Slow planner suggestion',
+        salience: Math.min(1, (ctx.length / 2000) + 0.1),
+        edits,
+        steps: ['Deeper static analysis', 'Formatting suggestions']
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(plan))
+    } catch (err) {
+      res.writeHead(400)
+      res.end('bad request')
+    }
+    return
+  }
+  res.writeHead(404)
+  res.end('not found')
+})
+
+server2.listen(SLOW_PORT, '127.0.0.1', () => {
+  console.log('Slow planner listening on http://127.0.0.1:' + SLOW_PORT)
+})

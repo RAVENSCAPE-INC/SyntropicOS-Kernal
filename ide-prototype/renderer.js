@@ -68,15 +68,16 @@ window.addEventListener('DOMContentLoaded', () => {
         const existing = window.ide.readFile(p)
         const oldContent = existing.ok ? existing.content : editor.getValue()
         // If structured edits are present, compute the result of applying them
+        let newContent
         if (latestPlan && latestPlan.edits && Array.isArray(latestPlan.edits)) {
-          const newContent = applyEdits(oldContent, latestPlan.edits)
-          const diff = computeSimpleDiff(oldContent, newContent)
-          suggestionDiff.innerText = diff
+          newContent = applyEdits(oldContent, latestPlan.edits)
         } else {
-          const newContent = latestPlan.suggestion || editor.getValue()
-          const diff = computeSimpleDiff(oldContent, newContent)
-          suggestionDiff.innerText = diff
+          newContent = latestPlan.suggestion || editor.getValue()
         }
+        const diff = computeUnifiedDiff(oldContent, newContent)
+        suggestionDiff.innerText = diff
+        // apply inline decorations in Monaco to preview changes
+        applyInlineDecorations(oldContent, newContent)
       } catch (err) {
         alert('Failed to compute preview: ' + err)
       }
@@ -105,6 +106,8 @@ window.addEventListener('DOMContentLoaded', () => {
           alert('Applied suggestion and saved to ' + p + (b.ok ? '\nBackup: ' + b.backupPath : ''))
           const read = window.ide.readFile(p)
           if (read.ok) editor.setValue(read.content)
+          // clear decorations after apply
+          clearLineDecorations()
           // append audit entry
           try {
             const audit = {
@@ -147,6 +150,8 @@ window.addEventListener('DOMContentLoaded', () => {
         alert('Restored from backup: ' + r.restoredFrom)
         const read = window.ide.readFile(p)
         if (read.ok) editor.setValue(read.content)
+        // refresh decorations
+        clearLineDecorations()
       } catch (err) {
         alert('Rollback failed: ' + err)
       }
@@ -193,6 +198,62 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
       return out.join('\n')
+    }
+
+    function computeUnifiedDiff(a, b) {
+      // Very small unified-like diff generator using line comparison
+      const A = a.split('\n')
+      const B = b.split('\n')
+      const lines = []
+      let i = 0, j = 0
+      while (i < A.length || j < B.length) {
+        const la = A[i]
+        const lb = B[j]
+        if (la === lb) {
+          lines.push(' ' + (la === undefined ? '' : la))
+          i++; j++
+        } else {
+          if (la !== undefined && (lb === undefined || !B.slice(j, j+3).includes(la))) {
+            lines.push('-' + la)
+            i++
+          } else if (lb !== undefined && (la === undefined || !A.slice(i, i+3).includes(lb))) {
+            lines.push('+' + lb)
+            j++
+          } else {
+            // fallback: mark both
+            if (la !== undefined) { lines.push('-' + la); i++ }
+            if (lb !== undefined) { lines.push('+' + lb); j++ }
+          }
+        }
+      }
+      return lines.join('\n')
+    }
+
+    // Monaco decorations management
+    let currentDecorations = []
+    function clearLineDecorations() {
+      currentDecorations = editor.deltaDecorations(currentDecorations, [])
+    }
+
+    function applyInlineDecorations(oldContent, newContent) {
+      const A = oldContent.split('\n')
+      const B = newContent.split('\n')
+      const decorations = []
+      const max = Math.max(A.length, B.length)
+      for (let line = 0; line < max; line++) {
+        const la = A[line]
+        const lb = B[line]
+        const range = new monaco.Range(line+1, 1, line+1, 1)
+        if (la === lb) continue
+        if (la === undefined && lb !== undefined) {
+          decorations.push({ range, options: { isWholeLine: true, className: 'diag-added' } })
+        } else if (lb === undefined && la !== undefined) {
+          decorations.push({ range, options: { isWholeLine: true, className: 'diag-removed' } })
+        } else {
+          decorations.push({ range, options: { isWholeLine: true, className: 'diag-changed' } })
+        }
+      }
+      currentDecorations = editor.deltaDecorations(currentDecorations, decorations)
     }
 
     // Applies structured edits to a text content. Edits are applied in order,

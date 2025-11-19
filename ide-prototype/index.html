@@ -8,6 +8,14 @@
       body, html, #editor { height: 100%; margin: 0; }
       #toolbar { height: 44px; display:flex; gap:8px; align-items:center; padding:6px; background:#202020; color:#fff }
       button { padding:6px 10px }
+      /* Monaco decoration styles for additions/changes */
+      .diag-added { background: rgba(16, 185, 129, 0.12); border-left: 4px solid rgba(16,185,129,0.6); }
+      .diag-removed { background: rgba(239, 68, 68, 0.06); border-left: 4px solid rgba(239,68,68,0.6); text-decoration:line-through; }
+      .diag-changed { background: rgba(250, 204, 21, 0.06); border-left: 4px solid rgba(250,204,21,0.6); }
+      /* Audit modal */
+      #auditModal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:720px; max-height:80%; background:#0b1113; color:#dce7eb; border-radius:8px; padding:12px; display:none; box-shadow:0 10px 30px rgba(0,0,0,0.6); overflow:auto }
+      #auditModal pre { background:#041014; padding:8px; border-radius:4px; max-height:60vh; overflow:auto }
+      #auditModal .close { position:absolute; right:8px; top:8px; }
     </style>
   </head>
   <body>
@@ -36,6 +44,21 @@
         <button id="btn-confirm-apply" style="background:#1b8;">Confirm Apply</button>
         <button id="btn-cancel-apply">Cancel</button>
       </div>
+      <h4 style="margin-top:12px;color:#cbd5da">Audit Log (recent)</h4>
+      <div id="auditLog" style="background:#061012; padding:8px; border-radius:4px; min-height:80px; color:#bcd; font-size:12px; overflow:auto"></div>
+      <div style="margin-top:8px">
+        <button id="btn-open-audit">Open Audit Viewer</button>
+      </div>
+    </div>
+
+    <div id="auditModal">
+      <button class="close" id="auditClose">Close</button>
+      <h3>Audit Log Details</h3>
+      <div style="display:flex; gap:8px; margin-bottom:6px">
+        <button id="auditReload">Reload</button>
+        <button id="auditDownload">Download Log</button>
+      </div>
+      <pre id="auditDetails">(loading...)</pre>
     </div>
 
     <script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
