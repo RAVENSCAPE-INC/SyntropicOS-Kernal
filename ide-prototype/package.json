@@ -1,0 +1,17 @@
+{
+  "name": "syntropic-ide-prototype",
+  "version": "0.1.0",
+  "description": "Minimal self-modifying IDE prototype (Electron + monaco + simple agent host)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:agent": "node agent-host.js",
+    "install:deps": "npm install"
+  },
+  "keywords": [],
+  "author": "RAVENSCAPE-INC",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.0.0"
+  }
+}

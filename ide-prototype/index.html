@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: 'unsafe-inline' 'unsafe-eval'; script-src 'self' https: 'unsafe-inline' 'unsafe-eval';">
+    <title>Syntropic IDE Prototype</title>
+    <style>
+      body, html, #editor { height: 100%; margin: 0; }
+      #toolbar { height: 44px; display:flex; gap:8px; align-items:center; padding:6px; background:#202020; color:#fff }
+      button { padding:6px 10px }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <button id="btn-ping">Ping</button>
+      <button id="btn-open">Open File</button>
+      <button id="btn-save">Save File</button>
+      <input id="filePath" placeholder="path/to/file.js" style="flex:1;padding:6px" />
+      <button id="btn-plan">Ask Agent To Plan</button>
+    </div>
+    <div id="editor"></div>
+
+    <div id="agentPanel" style="position:fixed; right:0; top:50px; width:360px; height:calc(100% - 60px); background:#1b1b1b; color:#ddd; padding:10px; box-shadow: -4px 0 8px rgba(0,0,0,0.6); overflow:auto;">
+      <h3 style="margin:4px 0;color:#fff">Agent Suggestion</h3>
+      <div style="font-size:12px; margin-bottom:6px; color:#9aa5b1">Salience: <span id="suggestion-salience">-</span></div>
+      <pre id="suggestionText" style="white-space:pre-wrap; background:#0f1113; padding:8px; border-radius:4px; min-height:200px; color:#c7d1d7"></pre>
+      <div style="margin-top:8px; display:flex; gap:8px">
+        <button id="btn-apply-suggestion">Preview Apply</button>
+        <button id="btn-clear-suggestion">Clear</button>
+        <button id="btn-rollback">Rollback</button>
+      </div>
+
+      <h4 style="margin-top:12px;color:#cbd5da">Proposed Diff</h4>
+      <pre id="suggestionDiff" style="white-space:pre-wrap; background:#050608; padding:8px; border-radius:4px; min-height:120px; color:#e6edf3"></pre>
+      <div style="margin-top:8px; display:flex; gap:8px">
+        <button id="btn-confirm-apply" style="background:#1b8;">Confirm Apply</button>
+        <button id="btn-cancel-apply">Cancel</button>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
