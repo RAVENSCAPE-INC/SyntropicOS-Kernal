@@ -4,6 +4,11 @@ const path = require('path')
 const { scoreResonance } = require('./agent-resonance')
 const { applyEditsToContent, unifiedDiff, computeRisk } = require('./diff_engine')
 const { snapshotFile, appendEvent } = require('../vfs/overlay')
+const AgentRuntime = require('./agent_runtime')
+
+// create and start runtime
+const runtime = new AgentRuntime()
+runtime.start()
 
 const app = express()
 app.use(bodyParser.json({ limit: '1mb' }))
@@ -18,6 +23,24 @@ app.post('/resonance', (req, res) => {
     const r = scoreResonance(ctx)
     res.json({ resonance: r.score, reasons: r.reasons, metrics: r.metrics })
   } catch (e) { res.status(400).send('bad request') }
+})
+
+// Agents list
+app.get('/agents', (req, res) => {
+  try {
+    res.json({ agents: runtime.listAgents() })
+  } catch (e) { res.status(500).send('failed') }
+})
+
+// Dispatch an agent: { agent: 'planner', payload: {...} }
+app.post('/dispatch', async (req, res) => {
+  try {
+    const agent = req.body.agent
+    const payload = req.body.payload || {}
+    if (!agent) return res.status(400).send('missing agent')
+    const r = await runtime.dispatch(agent, payload)
+    res.json(r)
+  } catch (e) { res.status(500).send('dispatch failed: ' + String(e)) }
 })
 
 // Plan endpoint (fast planner stub)
@@ -83,6 +106,26 @@ app.post('/apply-patch', (req, res) => {
     appendEvent({ type: 'apply-patch', file: p, backup, risk })
     res.json({ ok: true, backup, risk })
   } catch (e) { res.status(500).send('apply failed: ' + String(e)) }
+})
+
+// Orchestrate: planner -> preview -> auditor -> guardian
+app.post('/orchestrate', async (req, res) => {
+  try {
+    const context = req.body.context || ''
+    // run planner
+    const plannerRes = await runtime.dispatch('planner', { context })
+    if (!plannerRes.ok) return res.status(500).json({ ok: false, planner: plannerRes })
+    const edits = (plannerRes.result && plannerRes.result.edits) || []
+    const oldContent = req.body.oldContent != null ? req.body.oldContent : ''
+    const newContent = applyEditsToContent(oldContent, edits)
+    const diff = unifiedDiff(oldContent, newContent)
+    const risk = computeRisk(oldContent, newContent)
+    // auditor
+    const auditorRes = await runtime.dispatch('auditor', { risk })
+    // guardian / policy
+    const guardianRes = await runtime.dispatch('guardian', { risk })
+    res.json({ ok: true, planner: plannerRes.result, preview: newContent, diff, risk, auditor: auditorRes.result, guardian: guardianRes.result })
+  } catch (e) { res.status(500).send('orchestrate failed: ' + String(e)) }
 })
 
 const PORT = process.env.VOMEGA_KERNEL_PORT || 4010

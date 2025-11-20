@@ -2,21 +2,64 @@ const fs = require('fs')
 const path = require('path')
 
 function applyEditsToContent(content, edits) {
-  const lines = content.split('\n')
-  // sort edits by startLine asc
-  const sorted = (edits || []).slice().sort((a,b)=>a.startLine - b.startLine)
-  let cur = lines.slice()
-  // apply from top to bottom
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const e = sorted[i]
-    const s = Math.max(0, e.startLine)
-    const en = Math.max(0, e.endLine)
-    const before = cur.slice(0, s)
-    const after = cur.slice(en)
-    const repl = (e.replacement || '').split('\n')
-    cur = before.concat(repl).concat(after)
+  if (!edits || edits.length === 0) return content
+  const lines = content.length === 0 ? [] : content.split('\n')
+
+  // Normalize edits: clamp indices and collect insert-only edits
+  const norm = edits.map((e, idx) => {
+    const s = Math.max(0, Math.floor(e.startLine || 0))
+    const en = Math.max(s, Math.floor(e.endLine || s))
+    const repl = (e.replacement == null) ? [] : e.replacement.split('\n')
+    return { origIndex: idx, start: s, end: en, repl }
+  })
+
+  // inserts: edits where start === end (insert at position)
+  const inserts = {}
+  // coverage: which edit index covers each original line (last edit wins)
+  const coverage = new Array(Math.max(0, lines.length)).fill(null)
+
+  norm.forEach((e, i) => {
+    if (e.start === e.end) {
+      inserts[e.start] = inserts[e.start] || []
+      inserts[e.start].push(e.repl.join('\n'))
+    } else {
+      const from = Math.min(e.start, lines.length)
+      const to = Math.min(e.end, lines.length)
+      for (let j = from; j < to; j++) coverage[j] = i
+    }
+  })
+
+  const out = []
+  const emittedEdit = new Set()
+
+  for (let i = 0; i <= lines.length; i++) {
+    // emit any inserts at this position (order preserved)
+    if (inserts[i]) {
+      inserts[i].forEach(t => out.push(t))
+    }
+
+    if (i === lines.length) break
+
+    const cov = coverage[i]
+    if (cov == null) {
+      out.push(lines[i])
+      continue
+    }
+
+    // If this is the first line covered by this edit, emit its replacement
+    if (!emittedEdit.has(cov)) {
+      const e = norm[cov]
+      out.push(e.repl.join('\n'))
+      emittedEdit.add(cov)
+    }
+
+    // skip ahead until coverage changes
+    let j = i
+    while (j < lines.length && coverage[j] === cov) j++
+    i = j - 1 // loop will increment
   }
-  return cur.join('\n')
+
+  return out.join('\n')
 }
 
 function unifiedDiff(a, b) {
